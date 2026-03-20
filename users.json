@@ -1,4 +1,17 @@
 {
-  "Wan00": { "name": "OWNER", "status": "PREMIUM", "agent": "SYSTEM" },
-  "User01": { "name": "PLAYER_1", "status": "ACTIVE", "agent": "WAN" }
+  "Wan00": { 
+    "name": "OWNER", 
+    "status": "PREMIUM", 
+    "expiry": "2030-12-31" 
+  },
+  "User01": { 
+    "name": "PLAYER_1", 
+    "status": "ACTIVE", 
+    "expiry": "2027-01-01" 
+  },
+  "UserTest": { 
+    "name": "TRIAL_USER", 
+    "status": "TRIAL", 
+    "expiry": "2024-05-01" 
+  }
 }
