@@ -1,0 +1,4 @@
+{
+  "Wan00": { "name": "OWNER", "status": "PREMIUM", "agent": "SYSTEM" },
+  "User01": { "name": "PLAYER_1", "status": "ACTIVE", "agent": "WAN" }
+}
