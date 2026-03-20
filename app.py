@@ -18,7 +18,7 @@ def load_json(file):
 def get_data():
     try:
         ts = int(time.time() * 1000)
-        url = f"https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?ts={ts}"
+        url = f"https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?ts=1774028458718}"
         r = requests.get(url, timeout=5)
         return jsonify(r.json())
     except:
