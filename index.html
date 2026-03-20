@@ -1,177 +1,205 @@
+import os
+import time
+import json
+import random
+import requests
+import logging
+from datetime import datetime
+from flask import Flask, jsonify, render_template_string, request
+
+# --- SETUP ---
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+app = Flask(__name__)
+
+# --- GLOBAL STATE ---
+state = {
+    "history": [],
+    "last_issue": None,
+    "win": 0,
+    "lose": 0,
+    "streak": 0
+}
+
+# --- LOGIK SISTEM ---
+def get_random_ua():
+    try:
+        if os.path.exists('user_agents.txt'):
+            with open('user_agents.txt', 'r') as f:
+                lines = [line.strip() for line in f if line.strip()]
+                return random.choice(lines)
+    except:
+        pass
+    return "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"
+
+def check_auth(user_id):
+    try:
+        if not os.path.exists('users.json'):
+            return {"status": "error", "msg": "Database users.json hilang!"}
+            
+        with open('users.json', 'r') as f:
+            users = json.load(f)
+            
+        if user_id in users:
+            user_data = users[user_id]
+            # Tukar string tarikh kepada objek datetime
+            expiry = datetime.strptime(user_data['expired'], '%Y-%m-%d')
+            now = datetime.now()
+            
+            if now < expiry:
+                return {"status": "valid", "name": user_data['name'], "expired": user_data['expired']}
+            else:
+                return {"status": "expired", "name": user_data['name']}
+        return {"status": "invalid"}
+    except Exception as e:
+        return {"status": "error", "msg": str(e)}
+
+def get_bs(n):
+    return "BIG" if int(n) >= 5 else "SMALL"
+
+# --- ROUTES ---
+@app.route('/api/login', methods=['POST'])
+def do_login():
+    data = request.json
+    user_id = data.get('id')
+    return jsonify(check_auth(user_id))
+
+@app.route('/api/data')
+def api_data():
+    global state
+    try:
+        ts = int(time.time() * 1000)
+        headers = {"User-Agent": get_random_ua(), "Accept": "application/json"}
+        url = f"https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?ts={ts}"
+        
+        r = requests.get(url, headers=headers, timeout=10)
+        res = r.json()
+        
+        all_list = res["data"]["list"]
+        latest_now = all_list[0]
+        issue_now = str(latest_now["issue"])
+        num_now = int(latest_now["number"])
+        size_now = get_bs(num_now)
+
+        if issue_now != state["last_issue"]:
+            for item in state["history"]:
+                if item["issue"] == issue_now and item["status"] == "WAIT":
+                    item["result"] = f"{size_now} ({num_now})"
+                    if item["pred"] == size_now:
+                        state["win"] += 1
+                        state["streak"] = (state["streak"] + 1) if state["streak"] >= 0 else 1
+                        item["status"] = "WIN"
+                    else:
+                        state["lose"] += 1
+                        state["streak"] = (state["streak"] - 1) if state["streak"] <= 0 else -1
+                        item["status"] = "LOSE"
+
+            next_issue = str(int(issue_now) + 1)
+            # Logik AI Shadow V6
+            r1 = get_bs(all_list[0]["number"])
+            r2 = get_bs(all_list[1]["number"])
+            pred = r1 if r1 == r2 else ("SMALL" if r1 == "BIG" else "BIG")
+            
+            state["history"].insert(0, {
+                "issue": next_issue, "pred": pred, "ai": "SHADOW-V6",
+                "result": "WAIT...", "status": "WAIT"
+            })
+            if len(state["history"]) > 10: state["history"].pop()
+            state["last_issue"] = issue_now
+
+        return jsonify({"status": "success", "history": state["history"], "win": state["win"], "lose": state["lose"], "streak": state["streak"]})
+    except:
+        return jsonify({"status": "error"})
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_CODE)
+
+# --- UI HTML ---
+HTML_CODE = """
 <!DOCTYPE html>
-<html lang="ms">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MYSGAME PREDICTION VERSION PRO 1</title>
+    <title>MySGAME PRO V6</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Share+Tech+Mono&display=swap');
-        
-        * { box-sizing: border-box; margin: 0; padding: 0; outline: none; }
-        body { 
-            font-family: 'Share Tech Mono', monospace; background-color: #000; color: #00ffcc; 
-            display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px;
-            background-image: radial-gradient(circle, #0a1919 0%, #000 100%);
-        }
-
-        /* LOGIN BOX */
-        #login-page {
-            background: rgba(0, 0, 0, 0.9); border: 2px solid #00ffcc; padding: 40px 20px; border-radius: 15px;
-            text-align: center; box-shadow: 0 0 20px #00ffcc55; width: 100%; max-width: 400px;
-        }
-        .input-box { 
-            width: 100%; padding: 15px; background: #111; border: 1px solid #444; border-radius: 5px;
-            color: #00ffcc; text-align: center; font-size: 1.2rem; margin-bottom: 20px; font-family: inherit;
-        }
-        .btn { 
-            width: 100%; padding: 15px; background: #00ffcc; color: #000; font-size: 1.1rem; font-weight: bold; 
-            border: none; border-radius: 5px; cursor: pointer; font-family: 'Orbitron', sans-serif;
-        }
-
-        /* MAIN DASHBOARD */
-        #main-page { display: none; width: 100%; max-width: 600px; animation: fadeIn 0.8s; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-        .header-box { border: 2px solid #00ffcc; padding: 15px; text-align: center; margin-bottom: 15px; background: #050505; }
-        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px; }
-        .stat-card { border: 1px solid #333; padding: 10px; text-align: center; background: #0a0a0a; border-radius: 5px; }
-        .stat-card span { display: block; font-size: 0.7rem; color: #888; margin-bottom: 5px; }
-        .stat-card strong { font-size: 1.3rem; font-family: 'Orbitron', sans-serif; }
-
-        .timer-container { border: 1px solid #333; padding: 15px; margin-bottom: 15px; background: #0a0a0a; border-radius: 5px; }
-        .progress-bg { width: 100%; height: 8px; background: #222; border-radius: 4px; overflow: hidden; margin-top: 10px; }
-        .progress-bar { height: 100%; background: #00ffcc; width: 0%; transition: width 0.5s linear; }
-
-        table { width: 100%; border-collapse: collapse; background: #000; border: 1px solid #333; }
-        th { background: #111; color: #ffcc00; padding: 10px; font-size: 0.8rem; border-bottom: 1px solid #00ffcc; }
-        td { padding: 12px 5px; text-align: center; border-bottom: 1px solid #222; font-size: 0.9rem; }
-        
-        .badge { padding: 4px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: bold; color: #000; text-transform: uppercase; }
-        .win { background: #00ff00; } .lose { background: #ff3333; color: #fff; } .wait { background: #ffcc00; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0.3; } }
-
-        .text-green { color: #00ff00; } .text-red { color: #ff3333; } .text-yellow { color: #ffcc00; }
+        body { background: #050505; color: #00ffcc; font-family: 'Courier New', monospace; text-align: center; padding: 20px; }
+        .card { border: 1px solid #00ffcc; padding: 20px; border-radius: 10px; background: #000; box-shadow: 0 0 15px #00ffcc33; max-width: 450px; margin: auto; }
+        input { width: 100%; padding: 12px; margin: 10px 0; background: #111; border: 1px solid #333; color: #0f0; text-align: center; }
+        button { width: 100%; padding: 12px; background: #00ffcc; color: #000; border: none; font-weight: bold; cursor: pointer; }
+        .stats { display: flex; justify-content: space-around; margin: 15px 0; font-size: 0.8rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.75rem; }
+        th, td { border: 1px solid #222; padding: 8px; }
+        .win { color: #0f0; } .lose { color: #f00; } .wait { color: #ff0; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.4; } }
     </style>
 </head>
 <body>
-
-    <div id="login-page">
-        <h1 style="font-family:'Orbitron'; margin-bottom:10px;">MYSGAME</h1>
-        <p style="color:#666; font-size:0.7rem; margin-bottom:30px; letter-spacing:2px;">SUPREME DATABASE V5</p>
-        <input type="password" id="access-id" class="input-box" placeholder="ACCESS ID">
-        <button class="btn" onclick="checkLogin()">LOGIN SYSTEM</button>
+    <div id="login-ui" class="card">
+        <h2>TERMINAL LOGIN</h2>
+        <p style="font-size: 0.7rem; color: #666;">SERVER: ASIA-WINGO-1M</p>
+        <input type="text" id="user-id" placeholder="MASUKKAN ID AKSES">
+        <button onclick="login()">LOGIN SYSTEM</button>
     </div>
 
-    <div id="main-page">
-        <div class="header-box">
-            <h2 id="user-welcome" style="font-family:'Orbitron'; color:#ffcc00;">LOADING...</h2>
-            <div style="font-size:0.8rem; color:#888;">STATUS: <strong id="owner-stat" class="text-green">...</strong></div>
+    <div id="main-ui" class="card" style="display:none;">
+        <h3 id="welcome-msg">WELCOME</h3>
+        <div class="stats">
+            <div>WIN: <span id="w" class="win">0</span></div>
+            <div>LOSE: <span id="l" class="lose">0</span></div>
+            <div>STREAK: <span id="s">0</span></div>
         </div>
-
-        <div class="stats-grid">
-            <div class="stat-card"><span>WIN</span><strong id="win-count" class="text-green">0</strong></div>
-            <div class="stat-card"><span>LOSE</span><strong id="lose-count" class="text-red">0</strong></div>
-            <div class="stat-card"><span>WINRATE</span><strong id="win-rate" class="text-yellow">0%</strong></div>
-            <div class="stat-card"><span>STREAK</span><strong id="streak-count">0</strong></div>
-        </div>
-
-        <div class="timer-container">
-            <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
-                <span id="live-clock">00:00:00</span>
-                <span>NEXT: <strong id="countdown" class="text-yellow">00s</strong></span>
-            </div>
-            <div class="progress-bg"><div id="progress-bar" class="progress-bar"></div></div>
-        </div>
-
         <table>
-            <thead><tr><th>PERIOD</th><th>PREDIK</th><th>RESULT</th><th>STATUS</th></tr></thead>
-            <tbody id="table-body"></tbody>
+            <thead><tr><th>PERIOD</th><th>PRED</th><th>RESULT</th><th>STATUS</th></tr></thead>
+            <tbody id="list"></tbody>
         </table>
-        <div id="sys-log" style="font-size:0.7rem; color:#444; text-align:center; margin-top:15px;">DIRECT APP MODE ACTIVE</div>
+        <p id="expiry-msg" style="font-size: 0.6rem; color: #444; margin-top: 10px;"></p>
     </div>
 
-<script>
-    // MASUKKAN LINK RAW JSON KAU DI SINI!
-    const DATABASE_URL = "https://raw.githubusercontent.com/WanXPd11/App-V1/main/users.json";
-    const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
+    <script>
+        async function login() {
+            const id = document.getElementById('user-id').value;
+            const r = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id})
+            });
+            const d = await r.json();
+            if(d.status === "valid") {
+                document.getElementById('login-ui').style.display = 'none';
+                document.getElementById('main-ui').style.display = 'block';
+                document.getElementById('welcome-msg').innerText = "USER: " + d.name;
+                document.getElementById('expiry-msg').innerText = "LICENSE EXPIRED: " + d.expired;
+                setInterval(fetchData, 4000); fetchData();
+            } else if(d.status === "expired") { alert("ID EXPIRED! Sila renew."); }
+            else { alert("ID TIDAK SAH!"); }
+        }
 
-    let historyData = []; let lastIssue = null;
-    let winCount = 0; let loseCount = 0; let streak = 0;
-
-    async function checkLogin() {
-        const id = document.getElementById("access-id").value;
-        const btn = document.querySelector(".btn");
-        btn.innerText = "VERIFYING...";
-
-        try {
-            const res = await fetch(DATABASE_URL + "?t=" + Date.now());
-            const users = await res.json();
-
-            if (users[id]) {
-                const u = users[id];
-                document.getElementById("user-welcome").innerText = "WELCOME, " + u.name;
-                document.getElementById("owner-stat").innerText = u.status;
-                document.getElementById("login-page").style.display = "none";
-                document.getElementById("main-page").style.display = "block";
-                startSystem();
-            } else { alert("ID TIDAK SAH!"); btn.innerText = "LOGIN SYSTEM"; }
-        } catch (e) { alert("RALAT DATABASE!"); btn.innerText = "LOGIN SYSTEM"; }
-    }
-
-    async function fetchData() {
-        try {
-            const res = await fetch(API_URL + "?t=" + Date.now());
-            const json = await res.json();
-            const latest = json.data.list[0];
-            const issue = String(latest.issue);
-
-            if (issue !== lastIssue) {
-                historyData.forEach(item => {
-                    if (item.issue === issue && item.status === "WAIT") {
-                        const s = parseInt(latest.number) >= 5 ? "BIG" : "SMALL";
-                        item.result = s + " (" + latest.number + ")";
-                        if (item.pred === s) { winCount++; item.status = "WIN"; streak = streak < 0 ? 1 : streak + 1; }
-                        else { loseCount++; item.status = "LOSE"; streak = streak > 0 ? -1 : streak - 1; }
-                    }
+        async function fetchData() {
+            const r = await fetch('/api/data');
+            const d = await r.json();
+            if(d.status === "success") {
+                document.getElementById('w').innerText = d.win;
+                document.getElementById('l').innerText = d.lose;
+                document.getElementById('s').innerText = d.streak;
+                let html = "";
+                d.history.forEach(i => {
+                    html += `<tr>
+                        <td>${i.issue.slice(-4)}</td>
+                        <td style="color:yellow">${i.pred}</td>
+                        <td>${i.result}</td>
+                        <td class="${i.status.toLowerCase()}">${i.status}</td>
+                    </tr>`;
                 });
-
-                const nextId = (BigInt(issue) + 1n).toString();
-                const p = parseInt(latest.number) >= 5 ? "BIG" : "SMALL";
-                
-                historyData.unshift({ issue: nextId, pred: p, result: "WAIT", status: "WAIT" });
-                if (historyData.length > 8) historyData.pop();
-                lastIssue = issue;
-                render();
+                document.getElementById('list').innerHTML = html;
             }
-        } catch (e) { console.log("Direct connection only works in APP."); }
-    }
-
-    function render() {
-        document.getElementById("table-body").innerHTML = historyData.map(h => `
-            <tr>
-                <td>${h.issue.slice(-4)}</td>
-                <td style="color:${h.pred === 'BIG' ? '#ffcc00' : '#00ffcc'}; font-weight:bold;">${h.pred}</td>
-                <td>${h.result}</td>
-                <td><span class="badge ${h.status.toLowerCase()}">${h.status}</span></td>
-            </tr>
-        `).join('');
-        document.getElementById("win-count").innerText = winCount;
-        document.getElementById("lose-count").innerText = loseCount;
-        const total = winCount + loseCount;
-        document.getElementById("win-rate").innerText = total > 0 ? Math.round((winCount/total)*100) + "%" : "0%";
-        document.getElementById("streak-count").innerText = (streak > 0 ? "+" : "") + streak;
-    }
-
-    function startSystem() {
-        setInterval(() => {
-            const s = new Date().getSeconds();
-            document.getElementById("live-clock").innerText = new Date().toLocaleTimeString();
-            document.getElementById("countdown").innerText = (60 - s) + "s";
-            document.getElementById("progress-bar").style.width = (s / 60 * 100) + "%";
-            if (s % 5 === 0) fetchData();
-        }, 1000);
-        fetchData();
-    }
-</script>
+        }
+    </script>
 </body>
 </html>
+"""
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
