@@ -1,17 +1,14 @@
 {
-  "Wan00": { 
-    "name": "OWNER", 
-    "status": "PREMIUM", 
-    "expiry": "2030-12-31" 
+  "Wan01": {
+    "name": "Wan Ganas",
+    "expired": "2026-12-31"
   },
-  "User01": { 
-    "name": "PLAYER_1", 
-    "status": "ACTIVE", 
-    "expiry": "2027-01-01" 
+  "User02": {
+    "name": "Ahmad Pro",
+    "expired": "2026-03-25"
   },
-  "UserTest": { 
-    "name": "TRIAL_USER", 
-    "status": "TRIAL", 
-    "expiry": "2024-05-01" 
+  "Trial99": {
+    "name": "User Trial",
+    "expired": "2026-03-20"
   }
 }
